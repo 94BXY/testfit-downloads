@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Parking Solver v1.0.4 试用版 — 停车场自动布局工具（中国版）</title>
+<style>
+  #trial-banner{position:fixed;top:0;left:0;right:0;z-index:99999;background:#f59e0b;color:#000;text-align:center;padding:8px 16px;font-size:14px;font-weight:700;letter-spacing:.5px;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+  #trial-banner a{color:#000;text-decoration:underline;margin-left:8px}
+  body{padding-top:36px!important}
+</style>
+<!-- Leaflet (free, no API key) for the real-world map base. Pinned + SRI-verified. -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#1e293b; --panel2:#273449; --line:#334155;
+    --text:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; --accent2:#0ea5e9;
+    --good:#22c55e; --warn:#f59e0b; --bad:#ef4444;
+    --stall:#3b82f6; --compact:#22c55e; --ada:#1d4ed8; --ev:#10b981; --trailer:#f59e0b;
+    --aisle:#cbd5e1; --site:#1b2a3d; --building:#64748b; --obstacle:#7f1d1d;
+    --radius:8px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;font-family:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans TC",sans-serif;
+    background:var(--bg);color:var(--text);overflow:hidden;font-size:13px;}
+  button{font-family:inherit;}
+  /* ---- layout ---- */
+  #app{display:grid;grid-template-rows:auto 1fr 26px;grid-template-columns:1fr 340px;
+    grid-template-areas:"toolbar toolbar" "canvas panel" "status status";height:100vh;}
+  #toolbar{grid-area:toolbar;display:flex;flex-direction:column;align-items:stretch;gap:6px;padding:7px 14px;
+    background:linear-gradient(180deg,#1f2a3d,#141c2b);border-bottom:1px solid var(--line);
+    box-shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 6px 18px -8px rgba(0,0,0,.6);}
+  .tbrow{display:flex;align-items:center;gap:8px;min-width:0;overflow-x:auto;overflow-y:visible;scrollbar-width:thin;padding-bottom:1px;}
+  .tbrow::-webkit-scrollbar{height:5px;}
+  .tbrow + .tbrow{padding-top:6px;border-top:1px solid rgba(51,65,85,.4);}
+  #stage{grid-area:canvas;position:relative;background:
+    radial-gradient(circle at 30% 20%,#13203a,#0b1426);overflow:hidden;}
+  #panel{grid-area:panel;background:linear-gradient(180deg,#1e293b,#1a2536);border-left:1px solid var(--line);
+    overflow-y:auto;padding:14px 14px 22px;display:flex;flex-direction:column;gap:15px;}
+  #status{grid-area:status;display:flex;align-items:center;gap:18px;padding:0 12px;
+    background:#0b1426;border-top:1px solid var(--line);color:var(--muted);font-size:11px;}
+  canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair;z-index:2;touch-action:none;}
+  #map{position:absolute;inset:0;z-index:1;display:none;background:#0b1426;}
+  #map.show{display:block;}
+  .leaflet-container{background:#0b1426;}
+  /* ---- mobile: panel becomes a bottom drawer, canvas goes full-width ---- */
+  #panelToggle{display:none;position:fixed;right:14px;bottom:62px;z-index:60;height:46px;padding:0 18px;
+    border-radius:23px;border:none;background:linear-gradient(180deg,#0ea5e9,#0284c7);color:#001018;
+    font-weight:700;font-size:15px;box-shadow:0 4px 16px rgba(0,0,0,.45);cursor:pointer;align-items:center;gap:6px;}
+  @media (max-width:820px){
+    #app{grid-template-columns:1fr;grid-template-areas:"toolbar" "canvas" "status";}
+    #panel{position:fixed;left:0;right:0;bottom:26px;width:auto;max-height:66vh;border-left:none;
+      border-top:2px solid var(--accent);transform:translateY(112%);transition:transform .25s ease;z-index:55;
+      box-shadow:0 -10px 30px rgba(0,0,0,.55);border-top-left-radius:14px;border-top-right-radius:14px;}
+    #panel.open{transform:translateY(0);}
+    #panelToggle{display:inline-flex;}
+    #toolbar{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+    .field input[type=number],.field select,.field input[type=text]{min-height:36px;}
+    .seg button{padding:11px 0;}
+    .btn,.tool{min-height:38px;}
+  }
+  #mapbar{position:absolute;top:14px;left:50%;transform:translateX(-50%);z-index:6;
+    display:none;gap:6px;align-items:center;background:rgba(15,23,42,.94);border:1px solid var(--line);
+    border-radius:10px;padding:6px 8px;backdrop-filter:blur(6px);box-shadow:0 8px 30px rgba(0,0,0,.5);}
+  #mapbar.show{display:flex;}
+  #mapbar input{width:300px;background:#0f1a2b;border:1px solid var(--line);color:var(--text);
+    border-radius:6px;padding:7px 10px;font-size:12px;}
+  #mapbar input:focus{outline:none;border-color:var(--accent);}
+  #mapbar .mbtn{height:34px;padding:0 12px;border:1px solid var(--line);background:var(--panel2);
+    color:var(--text);border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;}
+  #mapbar .mbtn:hover{border-color:var(--accent);}
+  #mapbar .seg{height:34px;}
+  #objTree{position:absolute;top:14px;left:14px;z-index:6;display:none;width:212px;
+    background:rgba(15,23,42,.96);border:1px solid var(--line);border-radius:10px;overflow:hidden;
+    box-shadow:0 10px 36px rgba(0,0,0,.55);backdrop-filter:blur(6px);}
+  #objTree.show{display:block;}
+  #objTree .oth{padding:9px 12px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;
+    letter-spacing:.5px;background:#1a2638;border-bottom:1px solid var(--line);}
+  #objTreeBody{padding:6px;max-height:60vh;overflow-y:auto;}
+  .otrow{display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:12px;color:var(--text);}
+  .otrow:hover{background:var(--panel2);}
+  .otrow .oc{margin-left:auto;font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .otrow.lv1{padding-left:8px;font-weight:700;}
+  .otrow.lv2{padding-left:22px;}
+  .otrow.lv3{padding-left:38px;color:var(--muted);}
+  .otrow .otctl{display:flex;gap:5px;margin-left:7px;flex:none;}
+  .otrow .ot-eye,.otrow .ot-lock{font-size:11px;line-height:1;cursor:pointer;opacity:.9;transition:transform .12s,opacity .12s;}
+  .otrow .ot-eye:hover,.otrow .ot-lock:hover{transform:scale(1.18);}
+  .otrow .ot-eye.off{opacity:.4;}
+  .otrow .ot-lock.on{opacity:1;text-shadow:0 0 6px var(--accent);}
+  #twPanel{position:absolute;top:56px;left:50%;transform:translateX(-50%);z-index:6;display:none;
+    flex-direction:column;gap:5px;padding:11px 13px;min-width:248px;
+    background:rgba(15,23,42,.96);border:1px solid var(--line);border-radius:10px;
+    box-shadow:0 10px 36px rgba(0,0,0,.55);backdrop-filter:blur(6px);}
+  #twPanel.show{display:flex;}
+  #twPanel .twsec{font-size:10px;color:var(--accent);font-weight:700;text-transform:uppercase;
+    letter-spacing:.5px;margin-top:4px;}
+  #twPanel label{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer;padding:2px 0;}
+  #twPanel input{accent-color:var(--accent);}
+  #twPanel .twfoot{font-size:10px;color:var(--muted);margin-top:6px;border-top:1px solid var(--line);padding-top:6px;}
+  #entPopup{position:absolute;display:none;z-index:7;flex-direction:column;gap:3px;padding:5px;
+    background:rgba(15,23,42,.96);border:1px solid var(--line);border-radius:8px;
+    box-shadow:0 6px 22px rgba(0,0,0,.55);transform:translate(-50%,-160%);}
+  #entPopup.show{display:flex;}
+  #entPopup .cap{font-size:10px;color:var(--accent);text-align:center;font-weight:700;padding:1px 2px 2px;}
+  #entPopup .row{display:flex;gap:3px;}
+  #entPopup button{height:27px;padding:0 9px;border:1px solid var(--line);background:#0f1a2b;
+    color:var(--text);border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;}
+  #entPopup button:hover{border-color:var(--accent);}
+  #entPopup button.active{background:var(--accent2);color:#001018;border-color:var(--accent);}
+  #entPopup button.del{color:var(--bad);font-weight:800;}
+  #entPopup button.del:hover{background:var(--bad);color:#fff;border-color:var(--bad);}
+  #edgePopup{position:absolute;display:none;z-index:7;flex-direction:column;gap:4px;padding:7px 9px;
+    background:rgba(15,23,42,.97);border:1px solid var(--warn);border-radius:8px;
+    box-shadow:0 6px 22px rgba(0,0,0,.55);transform:translate(-50%,-130%);}
+  #edgePopup.show{display:flex;}
+  #edgePopup .cap{font-size:10px;color:var(--warn);text-align:center;font-weight:700;}
+  #edgePopup .row{display:flex;gap:4px;align-items:center;}
+  #edgePopup button{height:26px;padding:0 9px;border:1px solid var(--line);background:#0f1a2b;color:var(--text);border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;}
+  #edgePopup button:hover{border-color:var(--warn);}
+  #edgePopup button.del{color:var(--bad);}
+  #roadPopup{position:absolute;display:none;z-index:7;flex-direction:column;gap:5px;padding:7px 9px;
+    background:rgba(15,23,42,.97);border:1px solid #facc15;border-radius:8px;
+    box-shadow:0 6px 22px rgba(0,0,0,.55);transform:translate(-50%,-130%);}
+  #roadPopup.show{display:flex;}
+  #roadPopup .cap{font-size:10px;color:#facc15;text-align:center;font-weight:700;}
+  #roadPopup .row{display:flex;gap:4px;align-items:center;}
+  #roadPopup button{height:26px;padding:0 11px;border:1px solid var(--line);background:#0f1a2b;color:var(--text);border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;}
+  #roadPopup button:hover{border-color:#facc15;}
+  #roadPopup button.active{background:#facc15;color:#1a1a1a;border-color:#facc15;}
+  #roadPopup button.del{color:var(--bad);}
+  #roadPopup button.del:hover{background:var(--bad);color:#fff;border-color:var(--bad);}
+  #aislePopup{position:absolute;display:none;z-index:7;flex-direction:column;gap:4px;padding:7px 9px;
+    background:rgba(15,23,42,.97);border:1px solid #38bdf8;border-radius:8px;
+    box-shadow:0 6px 22px rgba(0,0,0,.55);transform:translate(-50%,-130%);}
+  #aislePopup.show{display:flex;}
+  #aislePopup .cap{font-size:10px;color:#38bdf8;text-align:center;font-weight:700;}
+  #aislePopup .row{display:flex;gap:4px;align-items:center;}
+  #aislePopup button{height:26px;padding:0 10px;border:1px solid var(--line);background:#0f1a2b;color:var(--text);border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;}
+  #aislePopup button:hover{border-color:#38bdf8;}
+  #aislePopup button.del{color:var(--bad);}
+  #aislePopup button.del:hover{background:var(--bad);color:#fff;border-color:var(--bad);}
+
+  /* ---- toolbar ---- */
+  .brand{display:flex;align-items:center;gap:9px;margin-right:6px;font-weight:700;letter-spacing:.2px;white-space:nowrap;}
+  .brand .dot{width:11px;height:11px;border-radius:3px;background:linear-gradient(135deg,#7dd3fc,var(--accent));box-shadow:0 0 12px var(--accent);}
+  .brand small{color:var(--muted);font-weight:500;font-size:11px;}
+  .tbar-sep{width:1px;height:24px;background:linear-gradient(180deg,transparent,var(--line) 22%,var(--line) 78%,transparent);margin:0 5px;flex:none;}
+  /* grouped tool palette — related buttons read as one island, not loose tiles */
+  .toolgroup{display:inline-flex;align-items:center;gap:2px;padding:3px;flex:none;
+    background:rgba(2,8,20,.42);border:1px solid rgba(51,65,85,.55);border-radius:11px;}
+  .tool{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+    min-width:47px;height:38px;padding:3px 6px;border:1px solid transparent;border-radius:8px;
+    background:transparent;color:var(--muted);cursor:pointer;font-size:10px;line-height:1;transition:background .12s,color .12s,box-shadow .12s;flex:none;}
+  .tool svg{width:17px;height:17px;}
+  .tool:hover{background:var(--panel2);color:var(--text);}
+  .tool.active{background:linear-gradient(180deg,#38bdf8,#0ea5e9);color:#00131f;border-color:var(--accent);
+    box-shadow:0 1px 6px -1px rgba(56,189,248,.6), 0 0 0 1px rgba(56,189,248,.5) inset;font-weight:600;}
+  .btn{height:34px;padding:0 13px;border-radius:9px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--text);cursor:pointer;font-weight:600;transition:.12s;display:inline-flex;align-items:center;gap:6px;flex:none;white-space:nowrap;}
+  .btn:hover{border-color:var(--accent);background:#2c3a52;}
+  .btn.primary{background:linear-gradient(180deg,#38bdf8,#0284c7);border-color:#38bdf8;color:#00131f;
+    box-shadow:0 2px 10px -2px rgba(56,189,248,.55);}
+  .btn.primary:hover{filter:brightness(1.07);}
+  .btn.ghost{background:transparent;border-color:transparent;color:var(--muted);}
+  .btn.ghost:hover{background:var(--panel2);color:var(--text);border-color:var(--line);}
+  .btn:disabled{opacity:.35;cursor:not-allowed;}
+  .spacer{flex:1;min-width:6px;}
+  .tbsel{height:34px;background:var(--panel2);border:1px solid var(--line);color:var(--text);
+    border-radius:8px;padding:0 9px;font-size:12px;cursor:pointer;flex:none;}
+  .tbsel:focus{outline:none;border-color:var(--accent);}
+
+  /* ---- panel ---- */
+  .group{background:var(--panel2);border:1px solid var(--line);border-radius:11px;overflow:hidden;
+    box-shadow:0 1px 0 rgba(255,255,255,.02) inset;}
+  .group>h3{margin:0;padding:11px 13px;font-size:11px;text-transform:uppercase;letter-spacing:.7px;
+    color:var(--muted);background:#1a2638;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:7px;
+    cursor:pointer;user-select:none;transition:background .12s,color .12s;}
+  .group>h3:hover{background:#22324a;color:var(--text);}
+  .group>h3 .ico{width:13px;height:13px;color:var(--accent);}
+  .group>h3 .chev{margin-left:auto;font-size:9px;color:var(--muted);transition:transform .15s;}
+  .group.collapsed>h3{border-bottom:none;}
+  .group.collapsed>h3 .chev{transform:rotate(-90deg);}
+  .group.collapsed>.body{display:none;}
+  .group .body{padding:14px;display:flex;flex-direction:column;gap:13px;}
+  .field{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:30px;}
+  .field label{color:var(--muted);font-size:12px;flex:1;line-height:1.4;}
+  .field input[type=number],.field select,.field input[type=text]{
+    width:100px;background:#0d1726;border:1px solid var(--line);color:var(--text);
+    border-radius:7px;padding:7px 10px;font-size:12px;text-align:right;transition:border-color .12s,box-shadow .12s;}
+  .field select{text-align:left;}
+  .field input[type=text]{text-align:left;}
+  .field input:focus,.field select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(56,189,248,.15);}
+  .seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;flex:none;}
+  .seg button{flex:1;background:#0f1a2b;border:none;color:var(--muted);padding:7px 0;cursor:pointer;font-size:12px;font-weight:600;transition:background .12s,color .12s;}
+  .seg button:hover{color:var(--text);}
+  .seg button.active{background:linear-gradient(180deg,#38bdf8,#0ea5e9);color:#00131f;}
+  .hint{font-size:11px;color:var(--muted);line-height:1.5;}
+
+  /* metrics */
+  .metrics{display:grid;grid-template-columns:1fr 1fr;gap:9px;}
+  .metric{background:#0d1726;border:1px solid var(--line);border-radius:9px;padding:10px 12px;}
+  .metric .v{font-size:22px;font-weight:800;line-height:1.1;color:#fff;font-variant-numeric:tabular-nums;letter-spacing:-.5px;}
+  .metric .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-top:3px;}
+  .metric.big{grid-column:span 2;background:linear-gradient(135deg,#10243a,#0d1726);border-color:#1e3a52;}
+  .metric.big .v{font-size:32px;color:var(--accent);text-shadow:0 0 22px rgba(56,189,248,.35);}
+  .legend{display:flex;flex-wrap:wrap;gap:6px 12px;}
+  .legend .it{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);}
+  .legend .sw{width:12px;height:12px;border-radius:3px;border:1px solid rgba(255,255,255,.2);}
+  .breakdown{display:flex;flex-direction:column;gap:5px;}
+  .brow{display:flex;align-items:center;gap:8px;font-size:12px;}
+  .brow .sw{width:11px;height:11px;border-radius:3px;}
+  .brow .nm{flex:1;color:var(--muted);}
+  .brow .ct{font-weight:700;font-variant-numeric:tabular-nums;}
+  .cc{display:flex;align-items:center;gap:8px;padding:7px 0;font-size:12px;border-bottom:1px solid var(--line);}
+  .cc:last-child{border-bottom:none;}
+  .cc .badge{min-width:18px;height:18px;padding:0 4px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#001018;}
+  .cc .badge.ok{background:var(--good);}
+  .cc .badge.no{background:var(--bad);color:#fff;}
+  .cc .badge.info{background:#64748b;color:#fff;}
+  .cc .nm{flex:1;color:var(--text);}
+  .cc .val{color:var(--muted);font-variant-numeric:tabular-nums;font-size:11px;}
+  #complianceScore{font-size:12px;font-weight:700;margin-bottom:8px;padding:6px 10px;border-radius:6px;text-align:center;}
+  #complianceScore.pass{background:rgba(34,197,94,.15);color:#4ade80;border:1px solid var(--good);}
+  #complianceScore.fail{background:rgba(239,68,68,.15);color:#f87171;border:1px solid var(--bad);}
+  #parkDemandBadge{font-size:12px;font-weight:700;margin:2px 0 4px;padding:7px 10px;border-radius:7px;text-align:center;}
+  #parkDemandBadge.pass{background:rgba(34,197,94,.15);color:#4ade80;border:1px solid var(--good);}
+  #parkDemandBadge.fail{background:rgba(239,68,68,.15);color:#f87171;border:1px solid var(--bad);}
+  #targetBadge{font-size:12px;font-weight:700;margin-top:6px;padding:6px 10px;border-radius:6px;text-align:center;}
+  #targetBadge.pass{background:rgba(34,197,94,.15);color:#4ade80;border:1px solid var(--good);}
+  #targetBadge.fail{background:rgba(239,68,68,.15);color:#f87171;border:1px solid var(--bad);}
+
+  /* schemes */
+  .scheme{display:flex;align-items:center;gap:8px;padding:7px 9px;background:#0f1a2b;border:1px solid var(--line);border-radius:6px;}
+  .scheme .nm{flex:1;font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .scheme .sub{font-size:10px;color:var(--muted);}
+  .scheme .mini{width:26px;height:24px;border-radius:5px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer;font-size:13px;}
+  .scheme .mini:hover{color:var(--text);border-color:var(--accent);}
+
+  .row2{display:flex;gap:8px;}
+  .row2 .btn{flex:1;justify-content:center;}
+
+  /* overlay help */
+  #help{position:absolute;left:14px;top:14px;max-width:320px;background:rgba(15,23,42,.92);
+    border:1px solid var(--line);border-radius:10px;padding:14px 16px;backdrop-filter:blur(6px);
+    box-shadow:0 10px 40px rgba(0,0,0,.5);font-size:12px;line-height:1.6;}
+  #help h4{margin:0 0 8px;font-size:13px;}
+  #help kbd{background:#0f1a2b;border:1px solid var(--line);border-radius:4px;padding:1px 6px;font-size:11px;}
+  #help .x{position:absolute;top:8px;right:10px;cursor:pointer;color:var(--muted);}
+  #help ul{margin:6px 0 0;padding-left:18px;}
+  #help li{margin:3px 0;}
+
+  /* toast */
+  #toast{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);
+    background:#0f1a2b;border:1px solid var(--accent);border-radius:8px;padding:9px 16px;
+    font-size:12px;opacity:0;pointer-events:none;transition:.25s;box-shadow:0 8px 30px rgba(0,0,0,.5);z-index:50;}
+  #toast.show{opacity:1;}
+
+  /* solving spinner */
+  #busy{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    background:rgba(8,14,26,.55);z-index:40;flex-direction:column;gap:14px;}
+  #busy.show{display:flex;}
+  .spin{width:42px;height:42px;border:4px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp 0.8s linear infinite;}
+  @keyframes sp{to{transform:rotate(360deg);}}
+
+  .zoomctl{position:absolute;right:14px;bottom:14px;display:flex;flex-direction:column;gap:6px;}
+  .zoomctl button{width:34px;height:34px;border-radius:8px;border:1px solid var(--line);
+    background:rgba(15,23,42,.9);color:var(--text);cursor:pointer;font-size:18px;font-weight:700;}
+  .zoomctl button:hover{border-color:var(--accent);}
+  .zoomctl .ztoggle.on{background:rgba(34,197,94,.22);border-color:var(--good);}
+  /* TestFit-style tabulation bar (bottom) */
+  #tabBar{position:absolute;left:14px;bottom:42px;z-index:5;display:none;gap:0;
+    background:rgba(15,23,42,.95);border:1px solid var(--line);border-radius:9px;
+    box-shadow:0 8px 28px rgba(0,0,0,.5);backdrop-filter:blur(6px);overflow:hidden;max-width:calc(100% - 120px);}
+  #tabBar.show{display:flex;}
+  #tabBar .col{padding:9px 16px;border-right:1px solid var(--line);min-width:98px;}
+  #tabBar .col:last-child{border-right:none;}
+  #tabBar .col h5{margin:0 0 5px;font-size:9px;letter-spacing:.6px;text-transform:uppercase;color:var(--accent);font-weight:800;}
+  #tabBar .kv{display:flex;justify-content:space-between;gap:12px;font-size:11px;line-height:1.7;}
+  #tabBar .kv .k{color:var(--muted);}
+  #tabBar .kv .v{color:#fff;font-weight:700;font-variant-numeric:tabular-nums;}
+
+  .scalebar{position:absolute;left:14px;bottom:14px;display:flex;flex-direction:column;gap:2px;font-size:10px;color:var(--muted);}
+  .scalebar .bar{height:5px;border:1px solid var(--text);border-top:none;}
+
+  /* modal (generative options + scheme compare) */
+  #modal{position:fixed;inset:0;z-index:100;display:none;align-items:center;justify-content:center;
+    background:rgba(2,6,16,.62);backdrop-filter:blur(3px);}
+  #modal.show{display:flex;}
+  #modalBox{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    max-width:92vw;max-height:88vh;overflow:auto;min-width:540px;box-shadow:0 24px 70px rgba(0,0,0,.6);}
+  #modalHead{display:flex;align-items:center;gap:8px;padding:13px 18px;border-bottom:1px solid var(--line);
+    position:sticky;top:0;background:var(--panel);z-index:1;}
+  #modalHead h2{margin:0;font-size:15px;flex:1;}
+  #modalHead .x{cursor:pointer;color:var(--muted);font-size:17px;width:28px;height:28px;display:flex;
+    align-items:center;justify-content:center;border-radius:6px;}
+  #modalHead .x:hover{background:var(--panel2);color:var(--text);}
+  #modalBody{padding:16px 18px;}
+  .optgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(195px,1fr));gap:10px;}
+  .optcard{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:12px;
+    display:flex;flex-direction:column;gap:5px;}
+  .optcard.best{border-color:var(--good);box-shadow:0 0 0 1px var(--good) inset;}
+  .optcard .optthumb{width:100%;height:auto;border-radius:6px;border:1px solid var(--line);display:block;background:#0b1426;}
+  .optcard .rank{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+  .optcard .big{font-size:25px;font-weight:800;color:var(--accent);line-height:1;}
+  .optcard .sub{font-size:11px;color:var(--muted);line-height:1.5;}
+  .optcard .apply{margin-top:5px;height:30px;border-radius:6px;border:1px solid var(--accent);
+    background:var(--accent2);color:#001018;font-weight:700;cursor:pointer;}
+  .optcard .apply:hover{filter:brightness(1.08);}
+  .cmptable{width:100%;border-collapse:collapse;font-size:12px;}
+  .cmptable th,.cmptable td{border:1px solid var(--line);padding:7px 10px;text-align:right;font-variant-numeric:tabular-nums;}
+  .cmptable th{background:#1a2638;color:var(--muted);position:sticky;top:46px;}
+  .cmptable td:first-child,.cmptable th:first-child{text-align:left;color:var(--text);font-weight:600;}
+  .cmptable tr:hover td{background:var(--panel2);}
+  ::-webkit-scrollbar{width:9px;height:9px;}
+  ::-webkit-scrollbar-thumb{background:var(--line);border-radius:5px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+</style>
+</head>
+<body>
+<div id="trial-banner">🔒 试用版 — 自动规划功能已禁用 · 购买完整版请联系卖家</div>
+<div id="app">
+  <!-- ===================== TOOLBAR ===================== -->
+  <div id="toolbar">
+   <div class="tbrow">
+    <div class="brand"><span class="dot"></span>TestFit Clone <small>v2.0</small></div>
+    <div class="seg" id="modeSeg" style="width:158px;height:34px;">
+      <button data-mode="parking" class="active">🅿️ 停车场</button>
+      <button data-mode="site">🏢 建案</button>
+    </div>
+    <button class="tool" id="btnObjTree" title="物件树 — 基地/停车/车位/出入口/建筑阶层" style="min-width:46px;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h8M3 12h13M3 19h8M16 5h5M19 12h2M16 19h5"/></svg>物件</button>
+    <div class="tbar-sep"></div>
+
+    <div class="toolgroup">
+    <button class="tool" data-tool="select" title="选取 / 编辑 (V)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l14 9-6 1 3 6-3 1-3-6-5 4z"/></svg>选取</button>
+    <button class="tool" data-tool="boundary" title="画基地边界 (B)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="1"/><circle cx="4" cy="4" r="1.6" fill="currentColor"/><circle cx="20" cy="20" r="1.6" fill="currentColor"/></svg>基地</button>
+    <button class="tool" data-tool="building" title="画建筑量体 (G)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M6 21V8l6-4 6 4v13M9 21v-4h6v4"/></svg>建筑</button>
+    <button class="tool" data-tool="obstacle" title="画障碍 / 排除区 (O)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg>障碍</button>
+    <button class="tool" data-tool="road" title="画场外道路（区划外的路：切开区划＋对外动线分析；建筑/车位自动绕开）(R)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21l4-18M20 21l-4-18M12 7v2M12 13v2M12 19v1"/></svg>场外道路</button>
+    <button class="tool" data-tool="aisle" title="画场内道路（自己加一条停车车道：沿你画的线生双排车位、自动接进动线网。先自动排车位再用）(A)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3v18M19 3v18M12 4v3M12 11v3M12 18v2"/></svg>场内道路</button>
+    <button class="tool" data-tool="parkzone" title="画停车区（只在框内排车位）(Z)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="3 2"/><path d="M9 16V8h3a2 2 0 010 4H9"/></svg>停车区</button>
+    <button class="tool" data-tool="stall" title="手动加车位（点一下放一格；选车位按 Delete 删）(K)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="3" width="14" height="18" rx="1"/><path d="M5 12h14"/></svg>加车位</button>
+    <button class="tool" data-tool="core" title="手动放服务核心（楼梯+电梯）— 建案模式点一下放一个 (C)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="3" width="12" height="18"/><path d="M12 3v18M6 9h12M6 15h12"/></svg>核心</button>
+    <button class="tool" data-tool="entrance" title="放出入口 (E)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h12M11 8l4 4-4 4M21 4v16"/></svg>出入口</button>
+    <button class="tool" data-tool="subdivide" title="切割基地成多块子地 (D)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l18 18M14 4l6 6M4 14l6 6"/></svg>切割</button>
+    <button class="tool" data-tool="measure" title="量测距离 (M)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 14l8-8 8 8-8 8zM7 9l2 2M10 6l2 2M13 9l2 2"/></svg>量测</button>
+    <button class="tool" data-tool="pan" title="平移画面 (空白键拖曳)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11V5a2 2 0 014 0v6m0-3a2 2 0 014 0v5a6 6 0 01-6 6h-1a6 6 0 01-5-3l-2.5-4a1.5 1.5 0 012.6-1.5L11 13"/></svg>平移</button>
+    </div>
+    <div class="spacer"></div>
+    <select id="regionSel" class="tbsel" title="法规地区（可编辑参考预设）">
+      <option value="cn" selected>🇨🇳 中国</option>
+      <option value="us">🇺🇸 美规</option>
+      <option value="jp">🇯🇵 日本</option>
+      <option value="eu">🇪🇺 欧洲</option>
+    </select>
+    <div class="seg" id="unitSeg" style="width:74px;height:34px;">
+      <button data-u="imperial">ft</button>
+      <button data-u="metric" class="active">m</button>
+    </div>
+    <button class="btn ghost" id="btnHelp" title="说明">?</button>
+   </div>
+
+   <div class="tbrow">
+    <button class="btn primary" id="btnSolve" style="opacity:.45;cursor:not-allowed;" title="试用版已禁用"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg>自动排车位 🔒</button>
+    <button class="btn" id="btnGenerate" style="opacity:.45;cursor:not-allowed;" title="试用版已禁用"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l1.5 4L11 8 6.5 9.5 5 14l-1.5-4.5L-1 8l4.5-1zM18 10l1 3 3 1-3 1-1 3-1-3-3-1 3-1z"/></svg>产生方案 🔒</button>
+    <button class="btn" id="btnOptimize" style="opacity:.45;cursor:not-allowed;" title="试用版已禁用"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.6" fill="currentColor"/></svg>自动达标 🔒</button>
+    <button class="btn ghost" id="btnSample">范例基地</button>
+    <select class="btn ghost" id="demoGallery" title="一键载入各类型范例（停车型态 / 建筑用途）" style="max-width:160px;"><option value="">📋 范例展示…</option></select>
+    <button class="btn ghost" id="btnClear">清空</button>
+    <button class="btn ghost" id="btnUndo" title="复原 Undo (⌘Z)" disabled>↶</button>
+    <button class="btn ghost" id="btnRedo" title="重做 Redo (⌘⇧Z)" disabled>↷</button>
+
+    <div class="spacer"></div>
+    <div class="seg" id="viewSeg" style="width:104px;height:34px;">
+      <button data-view="2d" class="active">2D</button>
+      <button data-view="3d">3D 量体</button>
+    </div>
+    <div class="toolgroup">
+    <button class="tool" id="btnMap" title="真实地图底图（卫星/街道，免费）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 010 18M12 3a15 15 0 000 18"/></svg>地图</button>
+    <button class="tool" id="btnBgImg" title="导入图片作为底图，在上面绘制基地（支持 PNG/JPG/SVG）">🖼️ 底图</button>
+    <input type="file" id="bgImgInput" accept="image/*" style="display:none;">
+    <button class="tool" id="btnMetes" title="依测量描述（方位角+距离 metes & bounds）自动画地界">📐 测量</button>
+    <button class="tool" id="btnContext" title="载入地图周边既有建物（OSM 免费）→ 3D 模式显示既有环境 context">🏙️ 周边建物</button>
+    <button class="tool" id="btnFlow" title="动线体检：车流热点（红=塞、绿=顺）+ 死巷/单一进出问题标示">🚦 动线体检</button>
+    <button class="tool" id="btnCloud" title="云端：登入后存方案、跨装置开启、产生分享连结">☁️ 云端</button>
+    </div>
+   </div>
+  </div>
+
+  <!-- ===================== STAGE ===================== -->
+  <div id="stage">
+    <div id="map"></div>
+    <canvas id="cv"></canvas>
+
+    <div id="mapbar">
+      <input type="text" id="addrInput" value="上海浦东新区陆家嘴" placeholder="🔍 输入地址 / 地名，按 Enter 移动地图…" />
+      <button class="mbtn" id="addrGo">前往</button>
+      <div class="seg" style="width:150px;">
+        <button id="tSat" class="active">卫星</button>
+        <button id="tStreet">街道</button>
+      </div>
+      <button class="mbtn" id="btnTwLayers" title="底图切换 + 叠加图层">🎨 图层样式</button>
+      <button class="mbtn" id="mapTrace" title="开始在地图上描出基地边界">✏️ 描基地</button>
+    </div>
+
+    <!-- Layer style panel -->
+    <div id="twPanel">
+      <div class="twsec">底图 Base</div>
+      <label><input type="radio" name="twbase" value="esri" checked> 🛰️ Esri 卫星（全球）</label>
+      <label><input type="radio" name="twbase" value="osm"> 🗺️ OSM 街道</label>
+      <label><input type="radio" name="twbase" value="amapSat"> 🛰️ 高德卫星（国内）</label>
+      <label><input type="radio" name="twbase" value="amapRoad"> 🗺️ 高德街道（国内）</label>
+      <div class="twfoot">Esri/OSM 需翻墙 · 高德国内直连</div>
+    </div>
+
+    <div id="help">
+      <span class="x" id="helpClose">✕</span>
+      <h4>🅿️ 怎么用</h4>
+      <ul>
+        <li>点 <b>基地</b> → 在画面点几下圈出地，按 <kbd>Enter</kbd> 或点回起点收尾。</li>
+        <li>（可选）用 <b>建筑</b> 放大楼量体、<b>障碍</b> 圈出不能停的地方。</li>
+        <li>右侧调 <b>停车角度 / 车格尺寸 / 车道宽</b> 等参数。</li>
+        <li>按 <b>⚡ 自动排车位</b>，几秒算出最佳配置与车位数。</li>
+        <li><b>选取</b> 模式点单一车格可切换 标准/小型/充电/无障碍；右键删除。</li>
+        <li>滚轮缩放、空白键拖曳平移。</li>
+      </ul>
+    </div>
+
+    <div id="busy"><div class="spin"></div><div id="busyTxt">运算中…</div></div>
+
+    <div class="zoomctl">
+      <button id="btnTrees" title="景观树 显示/隐藏" class="ztoggle on">🌳</button>
+      <button id="zin">＋</button><button id="zout">－</button><button id="zfit" title="符合画面" style="font-size:12px;">⤢</button>
+    </div>
+
+    <!-- TestFit-style tabulation bar -->
+    <div id="tabBar"></div>
+
+    <!-- object tree (site hierarchy, like TestFit's left panel) -->
+    <div id="objTree">
+      <div class="oth">物件树 Object Tree</div>
+      <div id="objTreeBody"></div>
+    </div>
+    <div class="scalebar" id="scalebar"><div class="bar" id="scaleBar" style="width:80px;"></div><span id="scaleTxt">— ft</span></div>
+    <div id="toast"></div>
+
+    <!-- entrance type picker (appears when you click an entrance) -->
+    <div id="entPopup">
+      <div class="cap">↓ 这个出入口的方向</div>
+      <div class="row">
+        <button data-t="in" title="只进：车道箭头朝场内">▸ 只进</button>
+        <button data-t="out" title="只出：车道箭头朝场外">只出 ◂</button>
+        <button data-t="inout" title="可进可出：双向车道">⇄ 进出</button>
+        <button data-t="del" title="删除这个出入口" class="del">✕</button>
+      </div>
+    </div>
+
+    <!-- per-edge setback editor (site mode — click a boundary edge) -->
+    <div id="edgePopup">
+      <div class="cap">这条边退缩（<span id="edgeSbUnit">ft</span>）</div>
+      <div class="row">
+        <input type="number" id="edgeSbInput" min="0" step="1" placeholder="auto"
+          style="width:62px;background:#0f1a2b;border:1px solid var(--line);color:var(--text);border-radius:5px;padding:4px 6px;font-size:12px;text-align:right;">
+        <button id="edgeSbApply">套用</button>
+        <button id="edgeSbReset" class="del" title="恢复自动退缩">↺</button>
+      </div>
+    </div>
+
+    <!-- road editor (select mode — click or drag a road to set width / delete) -->
+    <div id="roadPopup">
+      <div class="cap">场外道路宽度</div>
+      <div class="row">
+        <button data-rw="narrow" title="窄路 ≈5.5m">窄</button>
+        <button data-rw="std" title="标准双向 ≈7.3m">标准</button>
+        <button data-rw="wide" title="宽路 ≈11m">宽</button>
+        <button class="del" id="roadDel" title="删除这条路">✕</button>
+      </div>
+    </div>
+
+    <!-- drive-aisle editor (select mode — click an auto drive aisle; drag it to slide the parking grid) -->
+    <div id="aislePopup">
+      <div class="cap">这条场内道路</div>
+      <div class="row">
+        <button id="aisleSingle" title="只停单边（移除一侧的车位）">单边停</button>
+        <button id="aisleFlip" title="翻面：把单边停的车位换到中心线的另一边">翻面</button>
+        <button id="aisleDouble" title="还原成双边停车">双边停</button>
+        <button id="aisleRemove" class="del" title="移除这条场内道路与车位">移除</button>
+      </div>
+      <div class="cap" style="color:var(--muted);font-weight:500;font-size:9px;letter-spacing:0;">拖两端可改这条场内道路的方向／长短、双击车身加弯折点，车位跟著重贴</div>
+    </div>
+  </div>
+
+  <!-- ===================== PANEL ===================== -->
+  <div id="panel">
+    <!-- metrics -->
+    <div class="group">
+      <h3><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M7 14l3-3 3 3 5-6"/></svg>即时数据</h3>
+      <div class="body">
+        <div id="metricsParking">
+          <div class="metrics">
+            <div class="metric big"><div class="v" id="mTotal">0</div><div class="l">总车位数 Total Stalls</div></div>
+            <div class="metric"><div class="v" id="mRequired">—</div><div class="l">量体需求 Required</div></div>
+            <div class="metric"><div class="v" id="mRatio">—</div><div class="l">车位比 /1000 SF</div></div>
+            <div class="metric"><div class="v" id="mEff">—</div><div class="l">SF / 车位</div></div>
+            <div class="metric"><div class="v" id="mArea">—</div><div class="l">基地面积 (ac)</div></div>
+            <div class="metric"><div class="v" id="mCover">—</div><div class="l">停车覆盖率</div></div>
+          </div>
+          <div id="parkDemandBadge" style="display:none;"></div>
+          <div class="breakdown" id="breakdown"></div>
+        </div>
+        <div id="metricsSite" style="display:none;">
+          <div class="metrics">
+            <div class="metric big"><div class="v" id="sUnits">0</div><div class="l">总户数 Units</div></div>
+            <div class="metric"><div class="v" id="sGFA">—</div><div class="l">总楼地板 GFA (SF)</div></div>
+            <div class="metric"><div class="v" id="sNRSF">—</div><div class="l">可租 NRSF (SF)</div></div>
+            <div class="metric"><div class="v" id="sFAR">—</div><div class="l">容积率 FAR</div></div>
+            <div class="metric"><div class="v" id="sFloors">—</div><div class="l">楼层 Floors</div></div>
+            <div class="metric"><div class="v" id="sDensity">—</div><div class="l">密度 DU/ac</div></div>
+            <div class="metric"><div class="v" id="sYield">—</div><div class="l">Yield on Cost</div></div>
+          </div>
+          <div class="breakdown" id="siteBreakdown"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ PARKING-MODE PANEL ============ -->
+    <div id="grpParking">
+    <!-- parameters -->
+    <div class="group">
+      <h3><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 00-.1-1l2-1.5-2-3.4-2.3 1a7 7 0 00-1.7-1l-.3-2.6H10l-.3 2.6a7 7 0 00-1.7 1l-2.3-1-2 3.4L5.7 11a7 7 0 000 2l-2 1.5 2 3.4 2.3-1a7 7 0 001.7 1l.3 2.6h4l.3-2.6a7 7 0 001.7-1l2.3 1 2-3.4-2-1.5a7 7 0 00.1-1z"/></svg>停车参数</h3>
+      <div class="body">
+        <div class="field"><label>停车角度</label>
+          <div class="seg" id="angleSeg" style="width:160px;">
+            <button data-ang="90" class="active">90°</button>
+            <button data-ang="60">60°</button>
+            <button data-ang="45">45°</button>
+          </div>
+        </div>
+        <div class="field"><label>车格宽 Stall W (ft)</label><input type="number" id="pW" value="9" step="0.5" min="7.5" max="12"></div>
+        <div class="field"><label>车格深 Stall D (ft)</label><input type="number" id="pD" value="18" step="0.5" min="14" max="22"></div>
+        <div class="field"><label>🔄 车道循环</label>
+          <div class="seg" id="onewaySeg" style="width:160px;">
+            <button data-ow="0" class="active">双向</button>
+            <button data-ow="1">单向(省空间)</button>
+          </div>
+        </div>
+        <div class="field"><label>🚪 进出模式</label>
+          <div class="seg" id="accessSeg" style="width:188px;">
+            <button data-acc="open" title="开放式：整个临路面开放、不设闸口（保留全部车位）">开放式</button>
+            <button data-acc="single" title="单一出入口：限定一个闸口">单一</button>
+            <button data-acc="multi" class="active" title="多出入口：可设多个闸口（预设）">多个</button>
+          </div>
+        </div>
+        <div class="field"><label>车道宽 Aisle (ft)</label><input type="number" id="pA" value="24" step="1" min="10" max="30"></div>
+        <div class="field"><label>退缩 Setback (ft)</label><input type="number" id="pS" value="5" step="1" min="0" max="50"></div>
+        <div class="field"><label>方向 Orientation</label>
+          <select id="pOrient" title="自动最佳＝自动试多个角度、挑车位最多的那个（一定 ≥ 任何手动方向）">
+            <option value="auto">自动最佳（车位最多）</option>
+            <option value="0">水平 0°</option>
+            <option value="90">垂直 90°</option>
+            <option value="edge">沿最长边（最整齐）</option>
+          </select>
+        </div>
+        <button class="btn" id="btnRowAxis" style="justify-content:center;">🔄 换动线排法（一键换车道方向）</button>
+        <div class="hint">想调整停车场动线时：按「换动线排法」一键循环不同车道方向（＝ TestFit 的 Row&nbsp;Axis），整场车位自动跟著重排、挑你顺眼的；车道宽度在上面调。</div>
+      </div>
+    </div>
+
+    <!-- advanced parameters (collapsed by default — keeps the main panel uncluttered) -->
+    <div class="group collapsed">
+      <h3><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>进阶选项 Advanced</h3>
+      <div class="body">
+        <div class="field"><label>角度微调 Stall angle</label><input type="number" id="pAngleNum" value="90" step="5" min="30" max="90" title="任意角度（30–90），不限 90/60/45"></div>
+        <div class="field"><label>🌿 绿带 Green buffer (ft)</label><input type="number" id="pGreen" value="0" step="1" min="0" max="40"></div>
+        <div class="field"><label>🌳 景观岛 Max Run</label>
+          <div class="seg" id="maxRunSeg" style="width:120px;">
+            <button data-mr="0" class="active">关</button><button data-mr="1">开</button>
+          </div>
+        </div>
+        <div class="field" id="maxRunRow1" style="display:none;"><label>每排最多 Max stalls/run</label><input type="number" id="pMaxRun" value="12" step="1" min="3" max="40"></div>
+        <div class="field" id="maxRunRow2" style="display:none;"><label>岛宽 Gap width (ft)</label><input type="number" id="pMaxGap" value="9" step="1" min="4" max="30"></div>
+        <div class="field"><label>建筑高度 Height (ft)</label><input type="number" id="pH" value="35" step="1" min="8" max="400"></div>
+        <div class="field"><label>🎯 目标车位 Target</label><input type="number" id="pTarget" value="0" min="0" step="10" placeholder="0=不限"></div>
+        <div class="field"><label>🌳 景观树 配置</label>
+          <div class="seg" id="treesSeg" style="width:120px;">
+            <button data-tr="0">关</button><button data-tr="1" class="active">开</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- stall mix -->
+    <div class="group">
+      <h3><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>车位种类配比</h3>
+      <div class="body">
+        <div class="field"><label>♿ ADA 无障碍</label>
+          <select id="adaMode" style="width:110px;"><option value="code">依法规自动</option><option value="manual">手动指定</option><option value="off">不设置</option></select>
+        </div>
+        <div class="field" id="adaManualRow" style="display:none;"><label>ADA 数量</label><input type="number" id="adaManual" value="4" min="0" step="1"></div>
+        <div class="field"><label>⚡ EV 充电 (%)</label><input type="number" id="pEV" value="8" min="0" max="100" step="1"></div>
+        <div class="field"><label>🚗 Compact 小型 (%)</label><input type="number" id="pCompact" value="0" min="0" max="100" step="1"></div>
+        <div class="field"><label>🏍️ 机车 Moto (%)</label><input type="number" id="pMoto" value="0" min="0" max="100" step="1"></div>
+        <div class="field"><label>🚗 Compact 车格宽 (ft)</label><input type="number" id="cW" value="7.5" step="0.5" min="6" max="9" title="小型车格较窄，实际排得更密（真缩距）"></div>
+        <div class="field"><label>🎨 车种颜色</label>
+          <span style="display:flex;gap:4px;">
+            <input type="color" id="colStandard" value="#3b82f6" title="标准 Standard" style="width:26px;height:24px;padding:1px;border:1px solid var(--line);border-radius:5px;cursor:pointer;">
+            <input type="color" id="colCompact" value="#22c55e" title="小型 Compact" style="width:26px;height:24px;padding:1px;border:1px solid var(--line);border-radius:5px;cursor:pointer;">
+            <input type="color" id="colEv" value="#10b981" title="EV 充电" style="width:26px;height:24px;padding:1px;border:1px solid var(--line);border-radius:5px;cursor:pointer;">
+            <input type="color" id="colAda" value="#1d4ed8" title="无障碍 ADA" style="width:26px;height:24px;padding:1px;border:1px solid var(--line);border-radius:5px;cursor:pointer;">
+          </span>
+        </div>
+        <div class="hint">小型车格较窄、实际排得更密（真缩距）；色块可改各车种颜色。</div>
+        <div class="field"><label>建筑 GFA (SF)</label><input type="number" id="pGFA" value="0" min="0" step="1000" placeholder="自动"></div>
+        <div class="hint">GFA 留 0 时自动用画的建筑量体面积估算（楼地板）。</div>
+      </div>
+    </div>
+
+    <!-- legend -->
+    <div class="group">
+      <h3>图例</h3>
+      <div class="body">
+        <div class="legend" id="legend"></div>
+      </div>
+    </div>
+    </div><!-- /grpParking -->
+
+    <!-- ============ SITE-MODE PANEL ============ -->
+    <div id="grpSite" style="display:none;">
+      <div class="group">
+        <h3><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M6 21V8l6-4 6 4v13"/></svg>开发类型</h3>
+        <div class="body">
+          <div class="field"><label>用途 Use</label>
+            <select id="sUse" style="width:150px;">
+              <option value="multifamily">多户住宅 Multifamily</option>
+              <option value="tower">高层塔楼 Tower（点式高楼+车库基座）</option>
+              <option value="garden">花园公寓 Garden（低层多栋）</option>
+              <option value="singlefamily">独栋/连栋 Single-family</option>
+              <option value="mixeduse">复合用途 Mixed-use</option>
+              <option value="office">办公 Office</option>
+              <option value="retail">零售 Retail</option>
+              <option value="hotel">旅馆 Hotel</option>
+              <option value="industrial">工业 Industrial</option>
+              <option value="datacenter">资料中心 Data Center</option>
+            </select>
+          </div>
+          <div class="field" id="rowDockType" style="display:none;"><label>仓储卸货型态</label>
+            <select id="sDockType" style="width:150px;">
+              <option value="cross">双面对流 Cross-dock（门多·量体浅）</option>
+              <option value="single">单面 Single-dock（量体大·门少）</option>
+            </select>
+          </div>
+          <div class="hint" id="dockTypeHint" style="display:none;">仓储会自动生成卸货月台门、卡车回转场与 53 呎拖车位，前方留员工停车场。</div>
+          <div class="field" id="rowGroundRetail" style="display:none;"><label>🏬 底层零售 Mixed-use</label><input type="checkbox" id="sGroundRetail" style="width:auto;"></div>
+          <div class="field" id="rowSubType" style="display:none;"><label>住宅型态</label>
+            <select id="sSubType" style="width:150px;">
+              <option value="townhome">连栋 Townhome（窄栋相连）</option>
+              <option value="detached">独栋 Detached（大地坪+前后院）</option>
+              <option value="cottage">小宅 Cottage / ADU（小地坪）</option>
+            </select>
+          </div>
+          <div class="field"><label>楼层高 Floor-to-floor (ft)</label><input type="number" id="sFloorH" value="11" step="0.5" min="8" max="30"></div>
+          <div class="field"><label>得房率 Efficiency (%)</label><input type="number" id="sEff" value="82" step="1" min="50" max="100"></div>
+        </div>
+      </div>
+
+      <div class="group">
+        <h3><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg>法规 Zoning <span style="margin-left:auto;font-size:9px;color:var(--muted);">手动输入</span></h3>
+        <div class="body">
+          <div class="field"><label>最大容积 Max FAR</label><input type="number" id="zFAR" value="2.0" step="0.1" min="0.1" max="30"></div>
+          <div class="field"><label>最大高度 Height (ft)</label><input type="number" id="zHeight" value="75" step="1" min="10" max="1000"></div>
+          <div class="field"><label>最大建蔽 Coverage (%)</label><input type="number" id="zCov" value="45" step="1" min="5" max="100"></div>
+          <div class="field"><label>密度上限 DU/acre</label><input type="number" id="zDUA" value="40" step="1" min="0" placeholder="0=不限"></div>
+          <div class="field"><label>退缩 前 / 侧 / 后 (ft)</label>
+            <span style="display:flex;gap:4px;">
+              <input type="number" id="zSbF" value="25" step="1" min="0" style="width:42px;">
+              <input type="number" id="zSbS" value="10" step="1" min="0" style="width:42px;">
+              <input type="number" id="zSbR" value="20" step="1" min="0" style="width:42px;">
+            </span>
+          </div>
+          <div class="field"><label>车位比 Parking ratio</label><input type="number" id="zPark" value="1.5" step="0.1" min="0"></div>
+          <div class="hint" id="zParkHint">住宅：车位 / 户；商用/工业：车位 / 1000 SF。</div>
+          <div class="field"><label>停车型态 Type</label>
+            <select id="sParkType" style="width:150px;">
+              <option value="surface">🅿️ 地面停车 Surface</option>
+              <option value="structured">🏢 结构车库 Structured</option>
+              <option value="wrap">🏟️ 环绕车库 Wrap（住宅环绕停车核）</option>
+            </select>
+          </div>
+          <div class="field"><label>停车角度 Angle</label>
+            <select id="sParkAngle" style="width:150px;">
+              <option value="90">90° 垂直（车位最多）</option>
+              <option value="60">60° 斜角（好停车）</option>
+              <option value="45">45° 斜角（最好停）</option>
+            </select>
+          </div>
+          <div class="field" id="rowParkLevels" style="display:none;"><label>地上层 Above</label><input type="number" id="sParkLevelsAbove" value="3" step="1" min="0" max="12"></div>
+          <div class="field" id="rowParkBelow" style="display:none;"><label>地下层 Basement</label><input type="number" id="sParkLevelsBelow" value="0" step="1" min="0" max="8"></div>
+          <div class="field" id="rowStructEff" style="display:none;"><label>结构折减 %</label><input type="number" id="sStructEff" value="95" step="1" min="60" max="100" title="柱/核心损耗；坡道已实际扣除，故约 92-97%"></div>
+          <div class="hint" id="parkTypeHint" style="display:none;">结构车库：建筑范围内叠多层停车（地上＋地下），每层含实际坡道与柱网；3D 会叠层显示。地下层不计高度/容积。</div>
+        </div>
+      </div>
+
+      <div class="group" id="grpUnitMix">
+        <h3><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>单元配比 Unit Mix</h3>
+        <div class="body">
+          <div class="field" style="font-size:10px;color:var(--muted);"><span style="flex:1;">房型</span><span style="width:60px;text-align:right;">占比 %</span><span style="width:60px;text-align:right;">坪数 SF</span></div>
+          <div class="field"><label>Studio 套房</label><input type="number" id="uxStudioP" value="15" min="0" max="100" style="width:60px;"><input type="number" id="uxStudioS" value="500" min="200" style="width:60px;"></div>
+          <div class="field"><label>1-Bed 一房</label><input type="number" id="ux1P" value="45" min="0" max="100" style="width:60px;"><input type="number" id="ux1S" value="700" min="300" style="width:60px;"></div>
+          <div class="field"><label>2-Bed 二房</label><input type="number" id="ux2P" value="30" min="0" max="100" style="width:60px;"><input type="number" id="ux2S" value="1000" min="500" style="width:60px;"></div>
+          <div class="field"><label>3-Bed 三房</label><input type="number" id="ux3P" value="10" min="0" max="100" style="width:60px;"><input type="number" id="ux3S" value="1250" min="700" style="width:60px;"></div>
+          <div class="hint" id="uxSum">占比合计：100%</div>
+        </div>
+      </div>
+
+      <div class="group">
+        <h3><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20h18M5 20V10l4-3 4 3 6-4v14"/></svg>挖填方 Cut &amp; Fill <span style="margin-left:auto;font-size:9px;color:var(--muted);">选填</span></h3>
+        <div class="body">
+          <div class="field" style="font-size:10px;color:var(--muted);">基地四角现况标高（ft）</div>
+          <div class="field"><label>西北 NW / 东北 NE</label><span style="display:flex;gap:4px;"><input type="number" id="eNW" value="0" step="1" style="width:50px;"><input type="number" id="eNE" value="0" step="1" style="width:50px;"></span></div>
+          <div class="field"><label>西南 SW / 东南 SE</label><span style="display:flex;gap:4px;"><input type="number" id="eSW" value="0" step="1" style="width:50px;"><input type="number" id="eSE" value="0" step="1" style="width:50px;"></span></div>
+          <div class="field"><label>整平目标高 Pad (ft)</label><input type="number" id="ePad" value="0" step="0.5"><button class="btn ghost" id="ePadBal" style="margin-left:4px;font-size:10px;">平衡</button></div>
+          <div class="field"><label>挖 Cut ($/yd³)</label><input type="number" id="eCutC" value="8" step="1" min="0"></div>
+          <div class="field"><label>填 Fill ($/yd³)</label><input type="number" id="eFillC" value="6" step="1" min="0"></div>
+          <div class="field"><label>外运 Haul ($/yd³)</label><input type="number" id="eHaulC" value="12" step="1" min="0"></div>
+          <div class="hint" id="ewResult">输入四角标高后自动算挖填量与土方成本。</div>
+        </div>
+      </div>
+
+      <div class="group">
+        <h3><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>法规检核 Compliance</h3>
+        <div class="body">
+          <div id="complianceList"><div class="hint">画好基地、按「自动配置建案」后显示。</div></div>
+        </div>
+      </div>
+    </div><!-- /grpSite -->
+
+    <!-- ============ BUILDING APPEARANCE (both modes, when buildings exist) ============ -->
+    <div class="group" id="grpBldg" style="display:none;">
+      <h3><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M6 21V8l6-4 6 4v13M9 21v-4h6v4"/></svg>建筑量体 Massing</h3>
+      <div class="body">
+        <div class="field"><label>选择建筑 Building</label><select id="bSel" style="width:140px;"></select></div>
+        <div class="field"><label>用途 Use</label>
+          <select id="bUse" style="width:140px;">
+            <option value="residential">住宅 Residential</option>
+            <option value="office" selected>办公 Office</option>
+            <option value="retail">零售 Retail</option>
+            <option value="hotel">旅馆 Hotel</option>
+            <option value="industrial">工业/仓储 Industrial</option>
+            <option value="datacenter">资料中心 Data Center</option>
+          </select>
+        </div>
+        <div class="field"><label>楼层 Floors</label><input type="number" id="bFloors" value="1" min="1" max="120" step="1"></div>
+        <div id="bMassInfo" style="font-size:11.5px;color:var(--muted);background:#0d1726;border:1px solid var(--line);border-radius:7px;padding:8px 10px;line-height:1.7;"></div>
+        <div class="field"><label>颜色 Colour</label><input type="color" id="bColor" value="#64748b" style="width:54px;height:30px;padding:2px;"></div>
+        <div class="field"><label>透明度 Opacity (%)</label><input type="number" id="bOpacity" value="55" min="10" max="100" step="5"></div>
+        <div class="field"><label>🏠 屋顶 Roof</label>
+          <div class="seg" id="bRoofSeg" style="width:140px;"><button data-r="1" class="active">有顶</button><button data-r="0">开放(无顶)</button></div>
+        </div>
+        <button class="btn" id="bDelete" style="justify-content:center;">🗑️ 删除此建筑</button>
+        <div class="hint">给建筑设定用途＋楼层，会自动算出楼地板与「需要几个车位」（上方即时数据显示够不够）。选取模式可拖建筑的角调 footprint。切「3D 量体」看立体。</div>
+      </div>
+    </div>
+
+    <!-- financial pro-forma — driven by the drawn massing; shown in BOTH parking & site modes -->
+    <div class="group" id="grpFin">
+      <h3><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>财务 Pro-forma <span style="margin-left:auto;font-size:9px;color:var(--muted);">选填</span></h3>
+      <div class="body">
+        <div id="finReadout" style="font-size:12px;color:var(--muted);background:linear-gradient(135deg,#10243a,#0d1726);border:1px solid #1e3a52;border-radius:8px;padding:9px 11px;line-height:1.8;">画建筑量体＋设定参数后自动试算开发财务</div>
+        <div class="field"><label>土地成本 Land ($)</label><input type="number" id="fLand" value="4000000" step="100000" min="0"></div>
+        <div class="field"><label>营造单价 Hard ($/SF)</label><input type="number" id="fHard" value="180" step="5" min="0"></div>
+        <div class="field"><label>软成本 Soft (%)</label><input type="number" id="fSoft" value="20" step="1" min="0"></div>
+        <div class="field" id="fRentResiRow"><label>月租 Rent ($/户/月)</label><input type="number" id="fRentMo" value="1800" step="50" min="0"></div>
+        <div class="field" id="fRentCommRow"><label>租金 Rent ($/SF/年)</label><input type="number" id="fRentSf" value="28" step="1" min="0"></div>
+        <div class="field"><label>营运费率 OpEx (%)</label><input type="number" id="fOpex" value="35" step="1" min="0" max="90"></div>
+        <div class="field"><label>租金成长 Growth (%/yr)</label><input type="number" id="fGrowth" value="3" step="0.5" min="0" max="20"></div>
+        <div class="field"><label>持有年数 Hold (yr)</label><input type="number" id="fHold" value="5" step="1" min="1" max="30"></div>
+        <div class="field"><label>退场 Exit cap (%)</label><input type="number" id="fExitCap" value="5.5" step="0.25" min="2" max="15"></div>
+        <div class="hint">停车模式：依你画的量体（用途×楼层→GFA）试算殖利率/IRR。每个方案会连财务一起存。</div>
+      </div>
+    </div>
+
+    <!-- schemes -->
+    <div class="group">
+      <h3><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>方案 Schemes</h3>
+      <div class="body">
+        <div class="field"><input type="text" id="schemeName" placeholder="方案名称…" style="flex:1;width:auto;"></div>
+        <div class="row2">
+          <button class="btn" id="btnSaveScheme" style="flex:2;justify-content:center;">＋ 储存目前方案</button>
+          <button class="btn" id="btnCompare" style="flex:1;justify-content:center;" title="并排比较已储存方案">比较</button>
+        </div>
+        <div id="schemeList" style="display:flex;flex-direction:column;gap:6px;"></div>
+      </div>
+    </div>
+
+    <!-- parameter presets (reusable templates, separate from full-project schemes) -->
+    <div class="group">
+      <h3><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v4H4zM4 12h10v8H4zM18 12h2v8h-2z"/></svg>参数预设 Presets</h3>
+      <div class="body">
+        <div class="hint">把目前的「参数组」（车格/车道/法规/配比…）存成可重用范本，套到任何基地。</div>
+        <div class="field"><input type="text" id="presetName" placeholder="预设名称…" style="flex:1;width:auto;"></div>
+        <button class="btn" id="btnSavePreset" style="justify-content:center;">＋ 另存为参数预设</button>
+        <div id="presetList" style="display:flex;flex-direction:column;gap:6px;"></div>
+      </div>
+    </div>
+
+    <!-- export -->
+    <div class="group">
+      <h3><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>汇出</h3>
+      <div class="body">
+        <div class="row2"><button class="btn" id="exTakeoff" style="flex:1;justify-content:center;">📊 数量计算 Quantity Takeoff</button></div>
+        <div class="row2"><button class="btn" id="exPDF" style="flex:1;justify-content:center;" title="开启报告 → 浏览器列印 / 存成 PDF（向量文字、含中文）">📄 可行性报告 PDF</button><button class="btn" id="exXLSX" style="flex:1;justify-content:center;" title="下载多工作表 Excel（数量计算＋车位清单＋IRR 敏感度）">📊 Excel .xlsx</button></div>
+        <div class="row2"><button class="btn" id="exPNG">PNG 图</button><button class="btn" id="exCSV">CSV 清单</button></div>
+        <div class="row2"><button class="btn" id="exDXF">DXF (CAD)</button><button class="btn" id="exOBJ">OBJ (3D)</button><button class="btn" id="exGLTF" title="二进位 glTF：Blender / 网页 3D / Revit 可直接汇入（含材质颜色）">glTF (.glb)</button><button class="btn" id="exJSON">JSON</button></div>
+        <input type="file" id="impJSON" accept=".json" style="display:none;">
+        <button class="btn ghost" id="impBtn" style="justify-content:center;">汇入 JSON</button>
+      </div>
+    </div>
+    <div style="height:4px;"></div>
+  </div>
+
+  <!-- ===================== STATUS ===================== -->
+  <div id="status">
+    <span id="stTool">工具：选取</span>
+    <span id="stCoord">— , —</span>
+    <span id="stArea">面积：—</span>
+    <span id="stOrient"></span>
+    <span class="spacer" style="flex:1;"></span>
+    <span id="stMsg">就绪</span>
+  </div>
+</div>
+
+<!-- mobile: floating button to open/close the parameter drawer -->
+<button id="panelToggle" title="开关参数面板">⚙ 参数</button>
+
+<!-- reusable modal: generative options + scheme compare -->
+<div id="modal">
+  <div id="modalBox">
+    <div id="modalHead"><h2 id="modalTitle">—</h2><span class="x" id="modalClose">✕</span></div>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<script src="solver.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

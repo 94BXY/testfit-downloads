@@ -1,13 +1,15 @@
 {
   "licenses": [
     {
-      "hash": "b0d54d3c6891be0d6c5fad7cf96e90e0fb8929baea704b25f2eaa2e17c309eb5",
-      "buyer": "测试用户A",
+      "hash": "2a20010dfd8a388436842a5650dcea99a8e4a69516f140be1a8d8ae800629cd2",
+      "buyer": "测试-完整版",
+      "type": "full",
       "active": true
     },
     {
-      "hash": "68b52415f0e25894ef60f5b2cc29e8360af5bdf3f87414d1f4ecea3dc4d0422a",
-      "buyer": "测试用户B",
+      "hash": "106d477125d7d55aff76961f25e4ee6fd51bb65a5d5d80f33e60d43be00e693a",
+      "buyer": "测试-试用版",
+      "type": "trial",
       "active": true
     }
   ]

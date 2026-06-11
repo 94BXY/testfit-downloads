@@ -272,7 +272,8 @@ async function verify() {
     // 验证通过 → 存储 & 跳转
     localStorage.setItem('tf_license', code);
     localStorage.setItem('tf_buyer', lic.buyer);
-    showDownloads(lic.buyer, verData.versions);
+    localStorage.setItem('tf_type', lic.type || 'full');
+    showDownloads(lic.buyer, lic.type || 'full', verData.versions);
 
   } catch(e) {
     err.textContent = '网络错误，请重试';
@@ -282,15 +283,26 @@ async function verify() {
 }
 
 // ── 显示下载列表 ──
-function showDownloads(buyer, versions) {
+function showDownloads(buyer, type, versions) {
   document.getElementById('auth-section').style.display = 'none';
   document.getElementById('download-section').style.display = 'block';
-  document.getElementById('buyer-name').textContent = buyer;
+  document.getElementById('buyer-name').textContent = buyer + (type === 'trial' ? '（试用版）' : '');
+
+  // 根据授权类型过滤版本
+  const filtered = versions.filter(v => {
+    if (!v.tags || v.tags.length === 0) return true;
+    return v.tags.includes(type);
+  });
 
   const list = document.getElementById('version-list');
   list.innerHTML = '';
 
-  versions.forEach((v, i) => {
+  if (filtered.length === 0) {
+    list.innerHTML = '<div style="text-align:center;color:#888;padding:40px;">暂无可用版本</div>';
+    return;
+  }
+
+  filtered.forEach((v, i) => {
     const card = document.createElement('div');
     card.className = 'version-card';
     card.innerHTML = `
