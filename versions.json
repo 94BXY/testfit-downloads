@@ -1,0 +1,25 @@
+{
+  "versions": [
+    {
+      "version": "v1.0.4",
+      "date": "2026-06-11",
+      "note": "更新国标规范，适配国内停车设计标准",
+      "url": "testfit-v1.0.4.zip",
+      "size": "441 KB"
+    },
+    {
+      "version": "v1.0.3",
+      "date": "2026-06-01",
+      "note": "修复停车场角度切换崩溃问题；新增日欧区域预设",
+      "url": "testfit-beta-v1.0.3-cn.zip",
+      "size": "441 KB"
+    },
+    {
+      "version": "v1.0.2",
+      "date": "2026-05-15",
+      "note": "新增3D等轴视图；支持DXF导出",
+      "url": "testfit-v1.0.2.zip",
+      "size": "441 KB"
+    }
+  ]
+}

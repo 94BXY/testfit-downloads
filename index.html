@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TestFit Clone — 下载中心</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, "Microsoft YaHei", sans-serif;
+    background: #0f1117;
+    color: #e0e0e0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .header {
+    width: 100%;
+    padding: 40px 20px 20px;
+    text-align: center;
+    border-bottom: 1px solid #232630;
+  }
+  .header h1 {
+    font-size: 28px;
+    color: #fff;
+    font-weight: 600;
+  }
+  .header h1 span { color: #4f8cff; }
+  .header p {
+    color: #888;
+    margin-top: 8px;
+    font-size: 14px;
+  }
+
+  /* ── 授权码输入 ── */
+  #auth-section {
+    margin-top: 60px;
+    text-align: center;
+    width: 100%;
+    max-width: 420px;
+    padding: 0 20px;
+  }
+  #auth-section label {
+    display: block;
+    font-size: 14px;
+    color: #aaa;
+    margin-bottom: 12px;
+  }
+  .input-row {
+    display: flex;
+    gap: 10px;
+  }
+  .input-row input {
+    flex: 1;
+    padding: 12px 16px;
+    border: 1px solid #333;
+    border-radius: 8px;
+    background: #181b24;
+    color: #fff;
+    font-size: 15px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    outline: none;
+    transition: border-color .2s;
+  }
+  .input-row input:focus { border-color: #4f8cff; }
+  .input-row input::placeholder { letter-spacing: 0; color: #555; text-transform: none; }
+  .input-row button {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    background: #4f8cff;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .2s;
+    white-space: nowrap;
+  }
+  .input-row button:hover { background: #3a7aef; }
+  .input-row button:disabled { background: #333; cursor: not-allowed; }
+
+  #auth-error {
+    color: #ff6b6b;
+    font-size: 13px;
+    margin-top: 10px;
+    min-height: 20px;
+  }
+
+  /* ── 下载面板 ── */
+  #download-section {
+    display: none;
+    width: 100%;
+    max-width: 640px;
+    padding: 40px 20px 60px;
+  }
+  .welcome {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+  .welcome h2 {
+    font-size: 20px;
+    color: #fff;
+    font-weight: 500;
+  }
+  .welcome .buyer-name { color: #4f8cff; }
+  .welcome p {
+    color: #888;
+    font-size: 13px;
+    margin-top: 4px;
+  }
+
+  .version-card {
+    background: #181b24;
+    border: 1px solid #232630;
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 14px;
+    transition: border-color .2s;
+  }
+  .version-card:hover { border-color: #4f8cff44; }
+  .version-card .top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .version-card .ver {
+    font-size: 18px;
+    font-weight: 600;
+    color: #fff;
+  }
+  .version-card .ver .latest {
+    font-size: 11px;
+    background: #4f8cff22;
+    color: #4f8cff;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-left: 8px;
+    font-weight: 500;
+  }
+  .version-card .date {
+    font-size: 13px;
+    color: #666;
+  }
+  .version-card .note {
+    font-size: 14px;
+    color: #aaa;
+    margin-top: 10px;
+    line-height: 1.6;
+  }
+  .version-card .bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 14px;
+  }
+  .version-card .size {
+    font-size: 13px;
+    color: #555;
+  }
+  .version-card .dl-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 20px;
+    border: 1px solid #4f8cff;
+    border-radius: 6px;
+    color: #4f8cff;
+    font-size: 14px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: all .2s;
+  }
+  .version-card .dl-btn:hover {
+    background: #4f8cff;
+    color: #fff;
+  }
+  .version-card .dl-btn svg { width: 16px; height: 16px; }
+
+  .footer {
+    text-align: center;
+    padding: 20px;
+    font-size: 12px;
+    color: #444;
+  }
+  .footer a { color: #4f8cff; text-decoration: none; }
+
+  /* 退出按钮 */
+  .logout-btn {
+    background: none;
+    border: 1px solid #333;
+    color: #888;
+    padding: 6px 16px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    margin-top: 20px;
+    transition: all .2s;
+  }
+  .logout-btn:hover { border-color: #666; color: #ccc; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🏗️ <span>TestFit Clone</span> 下载中心</h1>
+  <p>停车场自动布局 · Site Solver · Site Intelligence</p>
+</div>
+
+<!-- 授权码输入 -->
+<div id="auth-section">
+  <label>请输入您的授权码以访问下载</label>
+  <div class="input-row">
+    <input id="license-input" type="text" placeholder="TF-XXXX-XXXX" maxlength="14" autocomplete="off">
+    <button id="verify-btn" onclick="verify()">验证</button>
+  </div>
+  <div id="auth-error"></div>
+</div>
+
+<!-- 下载面板（验证后显示） -->
+<div id="download-section">
+  <div class="welcome">
+    <h2>欢迎，<span class="buyer-name" id="buyer-name"></span></h2>
+    <p>选择版本下载 · 所有版本均可使用</p>
+    <button class="logout-btn" onclick="logout()">退出登录</button>
+  </div>
+  <div id="version-list"></div>
+</div>
+
+<div class="footer">
+  如有问题请联系卖家 · 授权码随购买时发放
+</div>
+
+<script>
+// ── SHA-256 工具 ──
+async function sha256(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+// ── 验证授权码 ──
+async function verify() {
+  const input = document.getElementById('license-input');
+  const btn   = document.getElementById('verify-btn');
+  const err   = document.getElementById('auth-error');
+  const code  = input.value.trim().toUpperCase();
+
+  if (!code) { err.textContent = '请输入授权码'; return; }
+  btn.disabled = true;
+  btn.textContent = '验证中...';
+  err.textContent = '';
+
+  try {
+    const [licRes, verRes] = await Promise.all([
+      fetch('licenses.json?' + Date.now()),
+      fetch('versions.json?' + Date.now())
+    ]);
+    const licData = await licRes.json();
+    const verData = await verRes.json();
+
+    const hash = await sha256(code);
+    const lic  = licData.licenses.find(l => l.hash === hash && l.active);
+
+    if (!lic) {
+      err.textContent = '授权码无效或已停用';
+      btn.disabled = false;
+      btn.textContent = '验证';
+      return;
+    }
+
+    // 验证通过 → 存储 & 跳转
+    localStorage.setItem('tf_license', code);
+    localStorage.setItem('tf_buyer', lic.buyer);
+    showDownloads(lic.buyer, verData.versions);
+
+  } catch(e) {
+    err.textContent = '网络错误，请重试';
+    btn.disabled = false;
+    btn.textContent = '验证';
+  }
+}
+
+// ── 显示下载列表 ──
+function showDownloads(buyer, versions) {
+  document.getElementById('auth-section').style.display = 'none';
+  document.getElementById('download-section').style.display = 'block';
+  document.getElementById('buyer-name').textContent = buyer;
+
+  const list = document.getElementById('version-list');
+  list.innerHTML = '';
+
+  versions.forEach((v, i) => {
+    const card = document.createElement('div');
+    card.className = 'version-card';
+    card.innerHTML = `
+      <div class="top">
+        <span class="ver">${v.version}${i===0?'<span class="latest">最新</span>':''}</span>
+        <span class="date">${v.date}</span>
+      </div>
+      <div class="note">${v.note}</div>
+      <div class="bottom">
+        <span class="size">${v.size || ''}</span>
+        <a class="dl-btn" href="${v.url}" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          下载
+        </a>
+      </div>`;
+    list.appendChild(card);
+  });
+}
+
+// ── 退出 ──
+function logout() {
+  localStorage.removeItem('tf_license');
+  localStorage.removeItem('tf_buyer');
+  document.getElementById('auth-section').style.display = '';
+  document.getElementById('download-section').style.display = 'none';
+  document.getElementById('license-input').value = '';
+  document.getElementById('auth-error').textContent = '';
+}
+
+// ── 启动：检查已登录 ──
+(async () => {
+  const saved = localStorage.getItem('tf_license');
+  if (saved) {
+    document.getElementById('license-input').value = saved;
+    await verify();
+  }
+})();
+
+// Enter 键提交
+document.getElementById('license-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') verify();
+});
+</script>
+</body>
+</html>

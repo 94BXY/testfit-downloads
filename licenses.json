@@ -1,0 +1,14 @@
+{
+  "licenses": [
+    {
+      "hash": "b0d54d3c6891be0d6c5fad7cf96e90e0fb8929baea704b25f2eaa2e17c309eb5",
+      "buyer": "测试用户A",
+      "active": true
+    },
+    {
+      "hash": "68b52415f0e25894ef60f5b2cc29e8360af5bdf3f87414d1f4ecea3dc4d0422a",
+      "buyer": "测试用户B",
+      "active": true
+    }
+  ]
+}
